@@ -22,7 +22,7 @@ def get_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentPa
         action="count",
         dest="v",
         default=0,
-        help="Enable verbose logging (includes nix)",
+        help="Enable verbose in nix (for verbose logging of nixos-rebuild see --debug)",
     )
     common_flags.add_argument("--quiet", action="count", default=0)
     common_flags.add_argument("--max-jobs", "-j")
@@ -92,7 +92,7 @@ def get_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentPa
     )
     main_parser.add_argument("--help", "-h", action="store_true", help="Show manpage")
     main_parser.add_argument(
-        "--debug", action="store_true", help="Enable debug logging"
+        "--debug", action="store_true", help="Enable debug logging of nixos-rebuild itself"
     )
     main_parser.add_argument(
         "--file", "-f", help="Enable and build the NixOS system from the specified file"
@@ -236,8 +236,7 @@ def parse_args(
     def parser_warn(msg: str) -> None:
         print(f"{parser.prog}: warning: {msg}", file=sys.stderr)
 
-    # verbose affects both nix commands and this script, debug only this script
-    if args.v or args.debug:
+    if args.debug:
         logger.setLevel(logging.DEBUG)
 
     # https://github.com/NixOS/nixpkgs/blob/master/pkgs/os-specific/linux/nixos-rebuild/nixos-rebuild.sh#L56
