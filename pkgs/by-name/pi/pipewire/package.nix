@@ -105,8 +105,8 @@ stdenv.mkDerivation (finalAttrs: {
     domain = "gitlab.freedesktop.org";
     owner = "pipewire";
     repo = "pipewire";
-    tag = finalAttrs.version;
-    hash = "sha256-ui5VTbSiobHmPUHW4jLguoeMWaKT4f2eTqdo3ZGgvNI=";
+    rev = "13c5e3c75688cdf43ff1ace26700894287f97bb5";
+    hash = "sha256-8UQuYKem65nAQNvDbM4urGwcWOsaKxRR2a/Mni2t9ok=";
   };
 
   patches = [
@@ -114,12 +114,6 @@ stdenv.mkDerivation (finalAttrs: {
     ./0060-libjack-path.patch
     # Move installed tests into their own output.
     ./0070-installed-tests-path.patch
-
-    (fetchpatch {
-      name = "musl.patch";
-      url = "https://gitlab.freedesktop.org/pipewire/pipewire/-/commit/49ce385c44f4c2882ef0aeac0312e6ae9bc85f8a.patch";
-      hash = "sha256-u8DLe6smodalVn3GwhI9RaDZTw4qZs8+Ylg9lxunMF0=";
-    })
   ];
 
   strictDeps = true;
