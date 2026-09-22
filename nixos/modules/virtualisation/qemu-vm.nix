@@ -19,6 +19,7 @@ let
   qemu-common = import ../../lib/qemu-common.nix { inherit (pkgs) lib stdenv; };
 
   cfg = config.virtualisation;
+  opt = options.virtualisation;
 
   qemu = cfg.qemu.package;
 
@@ -804,19 +805,44 @@ in
 
       networkingOptions = mkOption {
         type = types.listOf types.str;
-        default = [ ];
-        example = [
-          "-net nic,netdev=user.0,model=virtio"
-          "-netdev user,id=user.0,\${QEMU_NET_OPTS:+,$QEMU_NET_OPTS}"
-        ];
+        default =
+          let
+            forwardingOptions = flip concatMapStrings cfg.forwardPorts (
+              {
+                proto,
+                from,
+                host,
+                guest,
+              }:
+              if from == "host" then
+                "hostfwd=${proto}:${host.address}:${toString host.port}-"
+                + "${guest.address}:${toString guest.port},"
+              else
+                "'guestfwd=${proto}:${guest.address}:${toString guest.port}-"
+                + "cmd:${hostPkgs.netcat}/bin/nc ${host.address} ${toString host.port}',"
+            );
+            restrictNetworkOption = lib.optionalString cfg.restrictNetwork "restrict=on,";
+          in
+          [
+            "-net nic,netdev=user.0,model=virtio"
+            "-netdev user,id=user.0,${forwardingOptions}${restrictNetworkOption}\"$QEMU_NET_OPTS\""
+          ];
+        defaultText = literalExpression ''
+          [
+            "-net nic,netdev=user.0,model=virtio"
+            "-netdev user,id=user.0,''${forwardingOptions},''${restrictNetworkOption},$QEMU_NET_OPTS"
+            # ''${forwardingOptions} is built from virtualisation.forwardPorts
+            # ''${restrictNetworkOption} is built from virtualisation.restrictNetwork
+          ]
+        '';
         description = ''
-          Networking-related command-line options that should be passed to qemu.
+          Overrides the default networking-related command-line options that should be passed to qemu.
           The default is to use userspace networking (SLiRP).
           See the [QEMU Wiki on Networking](https://wiki.qemu.org/Documentation/Networking) for details.
 
-          If you override this option, be advised to keep
-          `''${QEMU_NET_OPTS:+,$QEMU_NET_OPTS}` (as seen in the example)
-          to keep the default runtime behaviour.
+          If you override this option be advised to keep `''$QEMU_NET_OPTS` to keep the default runtime behaviour.
+
+          This option overrides `${opt.forwardPorts}` and `${opt.restrictNetwork}` options.
         '';
       };
 
@@ -1155,6 +1181,41 @@ in
             Please enable it in your configuration.
           '';
         }
+        {
+          assertion =
+            opt.qemu.networkingOptions.highestPrio < (lib.mkOptionDefault { }).priority -> !cfg.restrictNetwork;
+          message = ''
+            You changed the default of `virtualisation.qemu.networkingOptions` but also
+            set `virtualisation.restrictNetwork = true`, which would make the latter ineffective.
+
+            To enable network restriction with `virtualisation.qemu.networkingOptions`
+            append "restrict=on" to `-netdev user` parameters, like so:
+
+              virtualisation.qemu.networkingOptions = [
+                  "-netdev user,[...],restrict=on"
+              ]
+
+            See QEMU manual for details: https://www.qemu.org/docs/master/system/qemu-manpage.html#hxtool-5
+          '';
+        }
+        {
+          assertion =
+            opt.qemu.networkingOptions.highestPrio < (lib.mkOptionDefault { }).priority
+            -> cfg.forwardPorts == [ ];
+          message = ''
+            You changed the default of `virtualisation.qemu.networkingOptions` but also
+            set `virtualisation.forwardPorts`, which would make the latter ineffective.
+
+            To forward ports with `virtualisation.qemu.networkingOptions`
+            append them as parameters to `-netdev user`, like so (example):
+
+              virtualisation.qemu.networkingOptions = [
+                  "-netdev user,[...],guestfwd=tcp:10.0.2.10:1080-tcp:127.0.0.1:1080"
+              ]
+
+            See QEMU manual for details: https://www.qemu.org/docs/master/system/qemu-manpage.html#hxtool-5
+          '';
+        }
       ];
 
     warnings = optional (cfg.directBoot.enable && cfg.useBootLoader) ''
@@ -1245,29 +1306,6 @@ in
     };
 
     security.pki.installCACerts = mkIf cfg.useHostCerts false;
-
-    virtualisation.qemu.networkingOptions =
-      let
-        forwardingOptions = flip concatMapStrings cfg.forwardPorts (
-          {
-            proto,
-            from,
-            host,
-            guest,
-          }:
-          if from == "host" then
-            "hostfwd=${proto}:${host.address}:${toString host.port}-"
-            + "${guest.address}:${toString guest.port},"
-          else
-            "'guestfwd=${proto}:${guest.address}:${toString guest.port}-"
-            + "cmd:${hostPkgs.netcat}/bin/nc ${host.address} ${toString host.port}',"
-        );
-        restrictNetworkOption = lib.optionalString cfg.restrictNetwork "restrict=on,";
-      in
-      [
-        "-net nic,netdev=user.0,model=virtio"
-        "-netdev user,id=user.0,${forwardingOptions}${restrictNetworkOption}\"$QEMU_NET_OPTS\""
-      ];
 
     virtualisation.qemu.options = mkMerge [
       (mkIf cfg.qemu.virtioKeyboard [
