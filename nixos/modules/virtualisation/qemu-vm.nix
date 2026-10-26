@@ -890,6 +890,22 @@ in
           Enable the virtio-keyboard device.
         '';
       };
+
+      virtioBalloon = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Enable the virtio-balloon device.
+
+          When enabled, the guest kernel automatically reports unused
+          pages to the host, so host memory stays close to actual guest
+          use instead of remaining claimed at the peak after heavy loads.
+          This matters most with {option}`virtualisation.diskImage` set to null,
+          where the root filesystem lives in RAM.
+
+          Requires host QEMU >= 5.1 and a guest kernel >= 5.7.
+        '';
+      };
     };
 
     virtualisation.useNixStoreImage = mkOption {
@@ -1301,6 +1317,9 @@ in
     virtualisation.qemu.options = mkMerge [
       (mkIf cfg.qemu.virtioKeyboard [
         "-device virtio-keyboard"
+      ])
+      (mkIf cfg.qemu.virtioBalloon [
+        "-device virtio-balloon-pci,free-page-reporting=on,deflate-on-oom=on"
       ])
       (mkIf pkgs.stdenv.hostPlatform.isx86 [
         "-usb"
