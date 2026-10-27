@@ -193,6 +193,18 @@ let
     # Create a directory for exchanging data with the VM.
     mkdir -p "$TMPDIR/xchg"
 
+    ${lib.optionalString (cfg.shareHostNixDB && cfg.mountHostNixStore) ''
+      # Register all host store paths in the guest, not just
+      # virtualisation.additionalPaths. Unregistered paths read fine through
+      # the overlay but fail validity checks, so Nix fetches them again.
+      if ${lib.getExe' hostPkgs.nix "nix-store"} --dump-db > "$TMPDIR/xchg/host-nix-db.dump" 2>/dev/null; then
+        echo "Dumped host Nix database."
+      else
+        echo "Warning: could not dump host Nix database." >&2
+        rm -f "$TMPDIR/xchg/host-nix-db.dump"
+      fi
+    ''}
+
     ${lib.optionalString cfg.useHostCerts ''
       mkdir -p "$TMPDIR/certs"
       if [ -e "$NIX_SSL_CERT_FILE" ]; then
@@ -637,9 +649,10 @@ in
         the VM.
 
         When the Nix store is mounted from the host, the closure is registered
-        in the Nix database in the VM. All other paths in the host Nix store
-        appear in the guest Nix store as well, but are considered garbage
-        (because they are not registered in the Nix database of the guest).
+        in the Nix database in the VM. Remaining host store paths are visible
+        as files in the guest and usable directly, but without
+        {option}`virtualisation.shareHostNixDB` Nix treats them as
+        unregistered and fetches them again on use.
 
         When {option}`virtualisation.useNixStoreImage` is
         set, the closure is copied to the Nix store image.
@@ -920,6 +933,22 @@ in
       defaultText = literalExpression "!cfg.useNixStoreImage && !cfg.useBootLoader";
       description = ''
         Mount the host Nix store via a virtual filesystem.
+      '';
+    };
+
+    virtualisation.shareHostNixDB = mkOption {
+      type = types.bool;
+      default = false;
+      defaultText = literalExpression "cfg.mountHostNixStore";
+      description = ''
+        Register all host store paths in the guest Nix database (/nix/var/nix/db),
+        not just the ones specified in {option}`virtualisation.additionalPaths`.
+        Only effective if {option}`virtualisation.mountHostNixStore` is `true`.
+
+        This option is useful when intending to use `nix-build` (or similar nix commands that perform building) inside the VM.
+        Without it, `nix-build` would needlessly re-fetch/re-build paths already present in the mounted nix store, just to record them in the VM's /nix/var/nix/db.
+
+        The cost of enabling this is copying host's /nix/var/nix/db to guest on every VM startup.
       '';
     };
 
@@ -1238,6 +1267,11 @@ in
         Group = lib.mkIf (config.nix.daemonGroup != "root") config.nix.daemonGroup;
       };
       script = ''
+        ${lib.optionalString (cfg.shareHostNixDB && cfg.mountHostNixStore) ''
+          if [[ -f /tmp/xchg/host-nix-db.dump ]]; then
+            ${lib.getExe' config.nix.package.out "nix-store"} --load-db < /tmp/xchg/host-nix-db.dump || echo "warning: host Nix DB dump failed to load" >&2
+          fi
+        ''}
         if [[ "$(cat /proc/cmdline)" =~ regInfo=([^ ]*) ]]; then
           ${lib.getExe' config.nix.package.out "nix-store"} --load-db < "''${BASH_REMATCH[1]}"
         fi
